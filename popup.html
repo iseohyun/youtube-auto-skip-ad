@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YouTube Auto Skip Ad</title>
+  <!-- Google Fonts 구글 폰트 적용 -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="card">
+    <header class="header">
+      <div class="logo-area">
+        <img src="icon.png" alt="Logo" class="logo-img" id="logo-icon">
+        <h1 class="title">YT <span class="gradient-text">Skipper</span></h1>
+      </div>
+      <!-- 스위치 토글 버튼 -->
+      <label class="switch-container" for="toggle-switch">
+        <input type="checkbox" id="toggle-switch" checked>
+        <span class="slider"></span>
+      </label>
+    </header>
+
+    <main class="main-content">
+      <!-- 상태 인디케이터 -->
+      <div class="status-indicator active" id="status-indicator">
+        <span class="pulse-dot"></span>
+        <span class="status-text" id="status-text">실시간 작동 중</span>
+      </div>
+
+      <!-- 누적 통계 카드 -->
+      <div class="stats-card">
+        <div class="stats-label">누적 광고 건너뛰기</div>
+        <div class="counter-container">
+          <span class="counter" id="skip-counter">0</span>
+          <span class="counter-unit">회</span>
+        </div>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <button class="btn btn-secondary" id="reset-button">통계 초기화</button>
+      <span class="version">v1.0</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

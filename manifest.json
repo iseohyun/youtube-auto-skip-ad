@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "YouTube Auto Skip Ad",
+  "version": "1.0",
+  "description": "유튜브 백그라운드 탭에서도 광고 건너뛰기 버튼을 자동으로 클릭해 줍니다.",
+  "permissions": [
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icon.png",
+      "48": "icon.png",
+      "128": "icon.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.youtube.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ]
+}
