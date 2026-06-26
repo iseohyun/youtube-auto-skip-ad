@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>YouTube Auto Skip Ad</title>
+  <title>YouTube Ad Full Watch</title>
   <!-- Google Fonts 구글 폰트 적용 -->
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="popup.css">
@@ -13,7 +13,7 @@
     <header class="header">
       <div class="logo-area">
         <img src="icon.png" alt="Logo" class="logo-img" id="logo-icon">
-        <h1 class="title">YT <span class="gradient-text">Skipper</span></h1>
+        <h1 class="title">YT <span class="gradient-text">Full Watch</span></h1>
       </div>
       <!-- 스위치 토글 버튼 -->
       <label class="switch-container" for="toggle-switch">
@@ -29,19 +29,55 @@
         <span class="status-text" id="status-text">실시간 작동 중</span>
       </div>
 
-      <!-- 누적 통계 카드 -->
-      <div class="stats-card">
-        <div class="stats-label">누적 광고 건너뛰기</div>
-        <div class="counter-container">
-          <span class="counter" id="skip-counter">0</span>
-          <span class="counter-unit">회</span>
+      <!-- 누적 통계 그리드 대시보드 -->
+      <div class="stats-grid">
+        <div class="stats-box">
+          <div class="stats-label">자동 클릭 완료</div>
+          <div class="counter-container">
+            <span class="counter" id="skip-counter">0</span>
+            <span class="counter-unit">회</span>
+          </div>
         </div>
+        <div class="stats-box">
+          <div class="stats-label">실제 시청 시간</div>
+          <div class="counter-container">
+            <span class="counter font-small" id="watch-time-counter">0초</span>
+          </div>
+        </div>
+        <div class="stats-box wide">
+          <div class="stats-label">광고로 대기한 시간</div>
+          <div class="counter-container">
+            <span class="counter font-medium" id="ad-time-counter">0초</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 차단 방패 감지 에러 경고 배너 -->
+      <div class="error-banner" id="error-banner" style="display: none;">
+        <div class="error-header">
+          <span>🚨 차단 가드 감지됨</span>
+          <button class="copy-btn" id="copy-error-btn" title="에러 정보 클립보드 복사">
+            <svg class="copy-icon" viewBox="0 0 24 24" width="12" height="12" style="margin-right: 2px;">
+              <path fill="currentColor" d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>
+            </svg>
+            <span>복사</span>
+          </button>
+        </div>
+        <div class="error-body" id="error-body"></div>
+      </div>
+
+      <!-- 최근 자동 클릭 기록 세션 -->
+      <div class="logs-section">
+        <div class="logs-header">최근 자동 클릭 기록</div>
+        <ul class="logs-list" id="logs-list">
+          <li class="empty-log">기록 없음</li>
+        </ul>
       </div>
     </main>
 
     <footer class="footer">
       <button class="btn btn-secondary" id="reset-button">통계 초기화</button>
-      <span class="version">v1.0</span>
+      <span class="version">v1.1</span>
     </footer>
   </div>
 

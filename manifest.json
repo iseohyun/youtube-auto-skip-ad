@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "YouTube Auto Skip Ad",
+  "name": "YouTube Ad Full Watch",
   "version": "1.0",
-  "description": "유튜브 백그라운드 탭에서도 광고 건너뛰기 버튼을 자동으로 클릭해 줍니다.",
+  "description": "유튜브 광고를 정속으로 완전히 봐주면서 귀찮은 건너뛰기 클릭만 인간다운 대기 시간 후에 대신해 줍니다.",
   "permissions": [
     "storage"
   ],
