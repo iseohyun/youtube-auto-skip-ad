@@ -258,13 +258,32 @@
         }
       }
 
-      // 1단계: 현대식 스킵 버튼이 돔에 존재하지만, 아직 활성화되지 않은 카운트다운 단계인지 정밀 진단
+      // 1단계: 카운트다운이 실행 중인지 정밀 진단 (카운트다운 텍스트나 프리뷰 컨테이너가 화면에 표시되고 있는 경우)
+      const countdownSelectors = [
+        '.ytp-ad-preview-container',
+        '.ytp-ad-preview-text',
+        '.ytp-ad-duration-remaining',
+        '[class*="preview-container"]',
+        '[class*="duration-remaining"]'
+      ];
+      for (const sel of countdownSelectors) {
+        const countdownEl = player.querySelector(sel);
+        if (countdownEl) {
+          const rect = countdownEl.getBoundingClientRect();
+          if (rect.width > 0 && rect.height > 0 && window.getComputedStyle(countdownEl).display !== 'none') {
+            // 카운트다운 관련 요소가 아직 화면에 렌더링 중이므로 대기
+            return;
+          }
+        }
+      }
+
+      // 현대식 스킵 버튼이 돔에 존재하지만, 아직 활성화되지 않은 카운트다운 단계인지 정밀 진단
       const skipBtnModern = player.querySelector('.ytp-ad-skip-button-modern') || player.querySelector('.ytp-ad-skip-button');
       if (skipBtnModern) {
         const style = window.getComputedStyle(skipBtnModern);
         const opacity = parseFloat(style.opacity || '1');
-        const isHidden = style.display === 'none' || style.visibility === 'hidden' || 
-                         (skipBtnModern.offsetWidth === 0 && skipBtnModern.offsetHeight === 0);
+        const rect = skipBtnModern.getBoundingClientRect();
+        const isHidden = style.display === 'none' || style.visibility === 'hidden' || (rect.width === 0 && rect.height === 0);
         
         // 현대식 스킵 버튼이 비활성(카운트다운 중) 상태라면 성급하게 바깥 컨테이너를 클릭하지 않고 완독 대기
         if (opacity <= 0.8 || isHidden) {
@@ -289,59 +308,71 @@
           // 오직 비디오 플레이어 내부에 위치한 버튼만 조회
           const btn = player.querySelector(selector);
 
-          // 최소화 방어 조치: 버튼이 존재하고, 크기가 있거나, offsetParent가 있거나, CSS상 display none/visibility hidden이 아닐 때
-          if (btn && (
-            btn.offsetWidth > 0 || 
-            btn.offsetHeight > 0 || 
-            btn.offsetParent !== null ||
-            (window.getComputedStyle(btn).display !== 'none' && window.getComputedStyle(btn).visibility !== 'hidden')
-          )) {
-            // 카운트다운 진행 중(텍스트 내 숫자 포함 여부) 판별
+          if (btn) {
+            // 4대 스킵 활성화 조건 확인
+            
+            // 1. 물리적 화면 노출 여부 검증 (Strict Rendering)
+            const rect = btn.getBoundingClientRect();
+            const isVisible = rect.width > 0 && rect.height > 0 && 
+                              window.getComputedStyle(btn).display !== 'none' && 
+                              window.getComputedStyle(btn).visibility !== 'hidden';
+            if (!isVisible) {
+              continue;
+            }
+
+            // 2. 비활성화 속성 검증 (disabled 혹은 aria-disabled="true")
+            if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
+              continue;
+            }
+
+            // 3. 카운트다운 진행 중(텍스트 내 숫자 포함 여부) 판별
             const text = btn.textContent || "";
             if (/\d/.test(text)) {
               // 텍스트 내 숫자가 있다면 아직 카운트다운 중이므로 시도하지 않음
               continue;
             }
 
-            // 카운트다운 진행 중(opacity: 0.5 등)인지 실제 클릭 활성화 상태(opacity: 1)인지 판별
+            // 4. 불투명도 검증 (opacity > 0.8)
             const style = window.getComputedStyle(btn);
             const opacity = parseFloat(style.opacity || '1');
+            if (opacity <= 0.8) {
+              continue;
+            }
 
-            // 불투명도가 0.8보다 큰 경우(카운트다운이 끝나고 활성화된 상태)에만 클릭을 시도
-            if (opacity > 0.8) {
-              // 타이밍 추적을 회피하기 위해 인간다운 1.0초 ~ 2.5초 지연 시간 랜덤 생성 후 실행
-              if (!clickScheduled) {
-                clickScheduled = true;
-                const delay = 1000 + Math.random() * 1500; // 1.0초 ~ 2.5초 사이의 무작위 대기 시간
-                const hoverDuration = 150 + Math.random() * 350; // 0.15초 ~ 0.5초 사이의 무작위 호버 유지 시간
-                const hoverDelay = delay - hoverDuration;
+            // 모든 4대 조건이 완벽히 충족된 경우 클릭 시퀀스 실행
+            if (!clickScheduled) {
+              clickScheduled = true;
+              const delay = 1000 + Math.random() * 1500; // 1.0초 ~ 2.5초 사이의 무작위 대기 시간
+              const hoverDuration = 150 + Math.random() * 350; // 0.15초 ~ 0.5초 사이의 무작위 호버 유지 시간
+              const hoverDelay = delay - hoverDuration;
 
-                console.log(`⏳ [YT Ad Full Watch] 활성화된 스킵 버튼 감지! ${Math.round(hoverDelay)}ms 후 호버 진입, ${Math.round(delay)}ms 후 클릭 예정...`);
+              console.log(`⏳ [YT Ad Full Watch] 활성화된 스킵 버튼 감지! ${Math.round(hoverDelay)}ms 후 호버 진입, ${Math.round(delay)}ms 후 클릭 예정...`);
 
-                // 1. 호버 진입 시뮬레이션 예약
-                setTimeout(() => {
-                  if (!isContextValid()) return;
-                  const currentBtn = player.querySelector(selector);
-                  if (currentBtn && (
-                    currentBtn.offsetWidth > 0 || 
-                    currentBtn.offsetHeight > 0 || 
-                    currentBtn.offsetParent !== null ||
-                    (window.getComputedStyle(currentBtn).display !== 'none' && window.getComputedStyle(currentBtn).visibility !== 'hidden')
-                  )) {
+              // 1. 호버 진입 시뮬레이션 예약
+              setTimeout(() => {
+                if (!isContextValid()) return;
+                const currentBtn = player.querySelector(selector);
+                if (currentBtn) {
+                  const currentRect = currentBtn.getBoundingClientRect();
+                  const currentVisible = currentRect.width > 0 && currentRect.height > 0 && 
+                                         window.getComputedStyle(currentBtn).display !== 'none' && 
+                                         window.getComputedStyle(currentBtn).visibility !== 'hidden';
+                  if (currentVisible && !currentBtn.disabled && currentBtn.getAttribute('aria-disabled') !== 'true') {
                     simulateHover(currentBtn);
                   }
-                }, hoverDelay);
+                }
+              }, hoverDelay);
 
-                // 2. 최종 마우스 클릭 시뮬레이션 예약
-                setTimeout(() => {
-                  if (!isContextValid()) return;
-                  const currentBtn = player.querySelector(selector);
-                  if (currentBtn && (
-                    currentBtn.offsetWidth > 0 || 
-                    currentBtn.offsetHeight > 0 || 
-                    currentBtn.offsetParent !== null ||
-                    (window.getComputedStyle(currentBtn).display !== 'none' && window.getComputedStyle(currentBtn).visibility !== 'hidden')
-                  )) {
+              // 2. 최종 마우스 클릭 시뮬레이션 예약
+              setTimeout(() => {
+                if (!isContextValid()) return;
+                const currentBtn = player.querySelector(selector);
+                if (currentBtn) {
+                  const currentRect = currentBtn.getBoundingClientRect();
+                  const currentVisible = currentRect.width > 0 && currentRect.height > 0 && 
+                                         window.getComputedStyle(currentBtn).display !== 'none' && 
+                                         window.getComputedStyle(currentBtn).visibility !== 'hidden';
+                  if (currentVisible && !currentBtn.disabled && currentBtn.getAttribute('aria-disabled') !== 'true') {
                     simulateClick(currentBtn);
                     console.log(`🎯 [YT Ad Full Watch] 지연 클릭 실행 완료! (셀렉터: ${selector})`);
 
@@ -364,11 +395,11 @@
                       console.warn("⚠️ [YT Ad Full Watch] 최근 클릭 타임스탬프 기록 실패:", err);
                     }
                   }
-                  clickScheduled = false; // 스케줄 상태 리셋
-                }, delay);
-              }
-              break;
+                }
+                clickScheduled = false; // 스케줄 상태 리셋
+              }, delay);
             }
+            break;
           }
         } catch (e) {
           // 예외 무시
