@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "YouTube Ad Full Watch",
-  "version": "1.1-beta",
+  "version": "1.1.0",
+  "version_name": "1.1-beta",
   "description": "유튜브 광고를 정속으로 완전히 봐주면서 귀찮은 건너뛰기 클릭만 인간다운 대기 시간 후에 대신해 줍니다.",
   "permissions": [
     "storage"
