@@ -38,31 +38,78 @@
     console.warn("⚠️ [YT Ad Full Watch] 크롬 스토리지 접근 실패 (iframe 환경일 수 있습니다):", e);
   }
 
-  // 이벤트 위임 및 마우스 클릭 시뮬레이션 (봇 감지 우회를 위해 영역 내 미세 랜덤 좌표 및 포커스 에뮬레이션)
-  function simulateClick(element) {
+  // 마우스 호버 진입 시뮬레이션 (mouseover -> mouseenter)
+  function simulateHover(element) {
     if (!element) return;
     try {
-      // 클릭 대상 내부에 실제 현대식 스킵 버튼이 있다면, 더 구체적인 요소를 클릭 대상으로 선정
       const innerBtn = element.querySelector('.ytp-ad-skip-button-modern') || 
                        element.querySelector('.ytp-ad-skip-button') || 
+                       element.querySelector('.ytp-ad-skip-button-text') ||
                        element.querySelector('button') || 
                        element.querySelector('[class*="skip-button"]') ||
                        element.querySelector('[id*="skip"]');
       const targetEl = innerBtn || element;
 
-      // 엘리먼트의 정확한 화면상 위치 및 크기 측정
       const rect = targetEl.getBoundingClientRect();
-      
-      // 버튼 크기 기준 가로/세로 20%~80% 범위 안에서 랜덤 오프셋 생성 (정중앙 클릭 패턴 우회)
       const randomXOffset = rect.width * (0.2 + Math.random() * 0.6);
       const randomYOffset = rect.height * (0.2 + Math.random() * 0.6);
-      
       const clientX = rect.left + randomXOffset;
       const clientY = rect.top + randomYOffset;
       const screenX = (window.screenX || 0) + clientX;
       const screenY = (window.screenY || 0) + clientY;
 
-      // 마우스 이벤트 옵션 설정 (실제 클릭 신호와 동일하도록 좌표 매핑)
+      const eventOpts = {
+        bubbles: true,
+        cancelable: true,
+        view: window,
+        detail: 0,
+        screenX: screenX,
+        screenY: screenY,
+        clientX: clientX,
+        clientY: clientY,
+        ctrlKey: false,
+        altKey: false,
+        shiftKey: false,
+        metaKey: false,
+        button: 0,
+        buttons: 0,
+        relatedTarget: null
+      };
+
+      // 알맹이 버튼 호버
+      targetEl.dispatchEvent(new MouseEvent('mouseover', eventOpts));
+      targetEl.dispatchEvent(new MouseEvent('mouseenter', eventOpts));
+
+      // 컨테이너가 다를 경우 컨테이너도 이중 호버
+      if (targetEl !== element) {
+        element.dispatchEvent(new MouseEvent('mouseover', eventOpts));
+        element.dispatchEvent(new MouseEvent('mouseenter', eventOpts));
+      }
+    } catch (e) {
+      console.error("⚠️ [YT Ad Full Watch] 호버 시뮬레이션 중 에러:", e);
+    }
+  }
+
+  // 이벤트 위임 및 마우스 클릭 시뮬레이션 (mousedown -> mouseup -> click 순차 모사)
+  function simulateClick(element) {
+    if (!element) return;
+    try {
+      const innerBtn = element.querySelector('.ytp-ad-skip-button-modern') || 
+                       element.querySelector('.ytp-ad-skip-button') || 
+                       element.querySelector('.ytp-ad-skip-button-text') ||
+                       element.querySelector('button') || 
+                       element.querySelector('[class*="skip-button"]') ||
+                       element.querySelector('[id*="skip"]');
+      const targetEl = innerBtn || element;
+
+      const rect = targetEl.getBoundingClientRect();
+      const randomXOffset = rect.width * (0.2 + Math.random() * 0.6);
+      const randomYOffset = rect.height * (0.2 + Math.random() * 0.6);
+      const clientX = rect.left + randomXOffset;
+      const clientY = rect.top + randomYOffset;
+      const screenX = (window.screenX || 0) + clientX;
+      const screenY = (window.screenY || 0) + clientY;
+
       const eventOpts = {
         bubbles: true,
         cancelable: true,
@@ -81,19 +128,26 @@
         relatedTarget: null
       };
 
-      // 1. 요소에 인위적으로 포커스 설정
       if (typeof targetEl.focus === 'function') {
         targetEl.focus();
       }
 
-      // 2. 표준 마우스 이벤트 시퀀스 전송
+      // 알맹이 버튼 클릭
       targetEl.dispatchEvent(new MouseEvent('mousedown', eventOpts));
       targetEl.dispatchEvent(new MouseEvent('mouseup', eventOpts));
       targetEl.dispatchEvent(new MouseEvent('click', eventOpts));
-
-      // 3. 빌트인 click() 메서드를 백업으로 호출
       if (typeof targetEl.click === 'function') {
         targetEl.click();
+      }
+
+      // 컨테이너가 다를 경우 컨테이너도 이중 클릭
+      if (targetEl !== element) {
+        element.dispatchEvent(new MouseEvent('mousedown', eventOpts));
+        element.dispatchEvent(new MouseEvent('mouseup', eventOpts));
+        element.dispatchEvent(new MouseEvent('click', eventOpts));
+        if (typeof element.click === 'function') {
+          element.click();
+        }
       }
     } catch (e) {
       console.error("⚠️ [YT Ad Full Watch] 클릭 시뮬레이션 중 에러 발생:", e);
@@ -220,14 +274,14 @@
 
       // 2단계: 광고 건너뛰기 버튼 존재 여부 확인 및 클릭 시도
       const selectors = [
-        '.ytp-ad-skip-button-modern',
-        '.ytp-skip-ad-button',
-        '.ytp-ad-skip-button',
-        '[class*="ytp-ad-skip-button"]',
-        '[class*="ytp-skip-ad-button"]',
-        '[id^="skip-button:"]',
+        '.ytp-ad-skip-button-modern',   // 최신형 현대식 버튼
+        '.ytp-ad-skip-button',          // 전통적 클래식 버튼
+        '.ytp-ad-skip-button-text',     // 버튼 내부 텍스트 노드
+        'button[class*="skip-button"]',
         'button[aria-label*="Skip"]',
-        'button[aria-label*="건너뛰기"]'
+        'button[aria-label*="건너뛰기"]',
+        '.ytp-skip-ad-button',          // 컨테이너 (최후 보루)
+        '[class*="ytp-skip-ad-button"]' // 컨테이너 (최후 보루)
       ];
 
       for (const selector of selectors) {
@@ -258,13 +312,29 @@
               // 타이밍 추적을 회피하기 위해 인간다운 1.0초 ~ 2.5초 지연 시간 랜덤 생성 후 실행
               if (!clickScheduled) {
                 clickScheduled = true;
-                const delay = 1000 + Math.random() * 1500;
-                console.log(`⏳ [YT Ad Full Watch] 활성화된 스킵 버튼 감지! ${Math.round(delay)}ms 후 인간다운 타이밍으로 클릭 예정...`);
+                const delay = 1000 + Math.random() * 1500; // 1.0초 ~ 2.5초 사이의 무작위 대기 시간
+                const hoverDuration = 150 + Math.random() * 350; // 0.15초 ~ 0.5초 사이의 무작위 호버 유지 시간
+                const hoverDelay = delay - hoverDuration;
 
+                console.log(`⏳ [YT Ad Full Watch] 활성화된 스킵 버튼 감지! ${Math.round(hoverDelay)}ms 후 호버 진입, ${Math.round(delay)}ms 후 클릭 예정...`);
+
+                // 1. 호버 진입 시뮬레이션 예약
                 setTimeout(() => {
                   if (!isContextValid()) return;
-                  
-                  // 딜레이 후 실행 시점에도 여전히 버튼이 존재하는지 재검증
+                  const currentBtn = player.querySelector(selector);
+                  if (currentBtn && (
+                    currentBtn.offsetWidth > 0 || 
+                    currentBtn.offsetHeight > 0 || 
+                    currentBtn.offsetParent !== null ||
+                    (window.getComputedStyle(currentBtn).display !== 'none' && window.getComputedStyle(currentBtn).visibility !== 'hidden')
+                  )) {
+                    simulateHover(currentBtn);
+                  }
+                }, hoverDelay);
+
+                // 2. 최종 마우스 클릭 시뮬레이션 예약
+                setTimeout(() => {
+                  if (!isContextValid()) return;
                   const currentBtn = player.querySelector(selector);
                   if (currentBtn && (
                     currentBtn.offsetWidth > 0 || 
