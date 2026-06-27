@@ -242,6 +242,13 @@
             btn.offsetParent !== null ||
             (window.getComputedStyle(btn).display !== 'none' && window.getComputedStyle(btn).visibility !== 'hidden')
           )) {
+            // 카운트다운 진행 중(텍스트 내 숫자 포함 여부) 판별
+            const text = btn.textContent || "";
+            if (/\d/.test(text)) {
+              // 텍스트 내 숫자가 있다면 아직 카운트다운 중이므로 시도하지 않음
+              continue;
+            }
+
             // 카운트다운 진행 중(opacity: 0.5 등)인지 실제 클릭 활성화 상태(opacity: 1)인지 판별
             const style = window.getComputedStyle(btn);
             const opacity = parseFloat(style.opacity || '1');
