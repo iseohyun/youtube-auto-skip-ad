@@ -57,6 +57,8 @@ body {
 .logo-img {
   width: 26px;
   height: 26px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
   filter: drop-shadow(0 2px 8px rgba(255, 0, 85, 0.4));
   transition: transform 0.3s ease;
 }
@@ -66,7 +68,7 @@ body {
 }
 
 .title {
-  font-size: 1.15rem;
+  font-size: 1.08rem;
   font-weight: 700;
   letter-spacing: 0.5px;
 }
@@ -189,18 +191,22 @@ input:checked + .slider:before {
   }
 }
 
-/* 그룹 1: 통계 그리드 */
-.stats-grid {
+/* 그룹 1: 통계 그리드 2x2 */
+.stats-grid-2x2 {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: 8px;
+  background: rgba(30, 41, 59, 0.3);
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .stats-box {
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  padding: 10px;
+  border-radius: 8px;
+  padding: 8px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -213,12 +219,11 @@ input:checked + .slider:before {
   border-color: rgba(255, 0, 85, 0.15);
 }
 
-.stats-box.wide {
-  grid-column: span 2;
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 14px;
+.stats-box.ad-active-highlight {
+  background: rgba(139, 92, 246, 0.15) !important;
+  border-color: rgba(139, 92, 246, 0.5) !important;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.25);
+  transform: scale(1.02);
 }
 
 .stats-label {
@@ -249,11 +254,11 @@ input:checked + .slider:before {
 }
 
 .counter.font-medium {
-  font-size: 1.22rem;
+  font-size: 1.15rem;
 }
 
 .counter.font-small {
-  font-size: 1.15rem;
+  font-size: 0.98rem;
 }
 
 .counter-unit {
@@ -305,7 +310,41 @@ input:checked + .slider:before {
   border: 2px solid #334155; /* 기본 비활성 다크 그레이 */
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
   color: #475569;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700;
+  font-size: 0.85rem;
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.light-circle-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+}
+
+.progress-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 32px;
+  height: 32px;
+  transform: rotate(-90deg);
+  transform-origin: 50% 50%;
+  display: none;
+}
+
+.progress-ring__circle {
+  transition: stroke-dashoffset 0.1s linear; /* 100ms 주기에 맞춤 */
+}
+
+
+
+#timer-complete-icon {
+  display: block;
 }
 
 /* 신호등 활성 상태 (초록색 불) */
@@ -335,27 +374,31 @@ input:checked + .slider:before {
   color: var(--text-secondary);
 }
 
-/* 그룹 3: 진단 도구 패널 */
-.diagnostic-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+/* 그룹 4: 진단 도구 패널 (2x2 그리드) */
+.diagnostic-grid-2x2, .diagnostic-grid-3x2 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  background: rgba(30, 41, 59, 0.3);
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .btn-diag {
   font-family: inherit;
-  font-size: 0.72rem;
+  font-size: 0.65rem; /* 2x2 그리드 내 글자 짤림 방지를 위해 소폭 축소 */
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--shaded-color);
   border: 1px solid var(--shaded-border);
-  padding: 8px 12px;
+  padding: 8px 4px;
   border-radius: 8px;
   cursor: pointer;
   display: flex;
   align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
+  justify-content: center; /* 그리드 내 중앙 정렬 */
+  gap: 5px;
   transition: all 0.25s ease;
 }
 
@@ -408,6 +451,93 @@ input:checked + .slider:before {
   justify-content: center !important;
 }
 
+/* 그룹 3: 실행 및 클릭 분석 */
+.click-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.click-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  background: rgba(30, 41, 59, 0.3);
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.click-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.01);
+  padding: 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+
+#row-click-perform {
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#row-click-perform:hover {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(16, 185, 129, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.1);
+}
+
+#row-click-perform:active {
+  transform: scale(0.98);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.click-icon-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.4);
+  border: 2px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.click-svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.click-info {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+}
+
+.click-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.click-value {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* 푸터 영역 */
 .footer {
   display: flex;
@@ -420,4 +550,19 @@ input:checked + .slider:before {
 .version {
   font-size: 0.68rem;
   color: rgba(255, 255, 255, 0.15);
+}
+
+/* 그룹 5: 개발자 테스트 버튼 특별 보라색 테마 */
+.test-btn {
+  border-color: rgba(139, 92, 246, 0.2);
+}
+
+.test-btn:hover {
+  border-color: rgba(139, 92, 246, 0.5) !important;
+  background: rgba(139, 92, 246, 0.08) !important;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.25) !important;
+}
+
+.test-btn:active {
+  transform: scale(0.97);
 }
