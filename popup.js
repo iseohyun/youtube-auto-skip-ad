@@ -6,35 +6,46 @@ document.addEventListener('DOMContentLoaded', () => {
   const watchTimeCounter = document.getElementById('watch-time-counter');
   const adTimeCounter = document.getElementById('ad-time-counter');
   const resetButton = document.getElementById('reset-button');
-  const logsList = document.getElementById('logs-list');
-  const errorBanner = document.getElementById('error-banner');
-  const errorBody = document.getElementById('error-body');
-  const copyErrorBtn = document.getElementById('copy-error-btn');
+  const reportSkipFailedBtn = document.getElementById('report-skip-failed-btn');
+  const reportEnforcementBtn = document.getElementById('report-enforcement-btn');
 
-  let currentErrorText = '';
+  // 신호등 요소 매핑
+  const lights = {
+    tagDetected: document.getElementById('light-tag-detected'),
+    rectFound: document.getElementById('light-rect-found'),
+    visible: document.getElementById('light-visible'),
+    timerCompleted: document.getElementById('light-timer-completed'),
+    opacityNormal: document.getElementById('light-opacity-normal'),
+    notDisabled: document.getElementById('light-not-disabled'),
+    clicked: document.getElementById('light-clicked'),
+    clickFailed: document.getElementById('light-click-failed')
+  };
 
   // 1. 초기 상태 불러오기
-  chrome.storage.local.get(['enabled', 'skippedCount', 'videoTimeWatched', 'adTimeWasted', 'skipLogs', 'enforcementError'], (result) => {
-    // 작동 상태 설정 (기본값: true)
-    const isEnabled = result.enabled !== false;
-    toggleSwitch.checked = isEnabled;
-    updateStatusUI(isEnabled);
+  chrome.storage.local.get(
+    ['enabled', 'skippedCount', 'videoTimeWatched', 'adTimeWasted', 'skipLogs', 'enforcementError', 'currentAdStatus'],
+    (result) => {
+      // 작동 상태 설정 (기본값: true)
+      const isEnabled = result.enabled !== false;
+      toggleSwitch.checked = isEnabled;
+      updateStatusUI(isEnabled);
 
-    // 각 카운터 데이터 노출
-    skipCounter.textContent = result.skippedCount || 0;
-    watchTimeCounter.textContent = formatTime(result.videoTimeWatched || 0);
-    adTimeCounter.textContent = formatTime(result.adTimeWasted || 0);
+      // 각 카운터 데이터 노출
+      skipCounter.textContent = result.skippedCount || 0;
+      watchTimeCounter.textContent = formatTime(result.videoTimeWatched || 0);
+      adTimeCounter.textContent = formatTime(result.adTimeWasted || 0);
 
-    // 최근 클릭 기록 노출
-    updateLogsUI(result.skipLogs || []);
+      // 신호등 초기 상태 업데이트
+      updateLightsUI(result.currentAdStatus || {});
 
-    // 차단 에러 배너 체크
-    if (result.enforcementError) {
-      showError(result.enforcementError);
-    } else {
-      hideError();
+      // 차단 경고 기록 존재 여부에 따른 제보 버튼 경고등 설정
+      if (result.enforcementError) {
+        reportEnforcementBtn.classList.add('guard-warning');
+      } else {
+        reportEnforcementBtn.classList.remove('guard-warning');
+      }
     }
-  });
+  );
 
   // 2. 토글 스위치 상태 변경 이벤트
   toggleSwitch.addEventListener('change', (e) => {
@@ -52,18 +63,83 @@ document.addEventListener('DOMContentLoaded', () => {
         videoTimeWatched: 0, 
         adTimeWasted: 0,
         skipLogs: [],
-        enforcementError: null
+        enforcementError: null,
+        currentAdStatus: {
+          tagDetected: false,
+          rectFound: false,
+          visible: false,
+          timerCompleted: false,
+          opacityNormal: false,
+          notDisabled: false,
+          clicked: false,
+          clickFailed: false,
+          enforcementShield: false
+        }
       }, () => {
         animateScale(skipCounter, 0);
-        watchTimeCounter.textContent = '0초';
-        adTimeCounter.textContent = '0초';
-        updateLogsUI([]);
-        hideError();
+        watchTimeCounter.textContent = '0 00:00:00';
+        adTimeCounter.textContent = '0 00:00:00';
+        updateLightsUI({});
+        reportEnforcementBtn.classList.remove('guard-warning');
+        reportSkipFailedBtn.classList.remove('failed-warning');
       });
     }
   });
 
-  // 4. 유튜브 탭에서의 실시간 스크립트 수치 및 기록/에러 갱신 이벤트 리스너
+  // 4. 스킵 실패 제보 버튼 클립보드 복사 이벤트
+  reportSkipFailedBtn.addEventListener('click', () => {
+    chrome.storage.local.get(['skippedCount', 'videoTimeWatched', 'adTimeWasted', 'skipLogs', 'currentAdStatus'], (res) => {
+      const d = new Date();
+      const timeStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+      
+      const status = res.currentAdStatus || {};
+      const statusText = `
+  - 버튼 감지 (tagDetected): ${status.tagDetected ? "🟢 YES" : "🔴 NO"}
+  - 위치/크기 (rectFound): ${status.rectFound ? "🟢 YES" : "🔴 NO"}
+  - 가시성 (visible): ${status.visible ? "🟢 YES" : "🔴 NO"}
+  - 타이머 완료 (timerCompleted): ${status.timerCompleted ? "🟢 YES" : "🔴 NO"}
+  - 투명도 정상 (opacityNormal): ${status.opacityNormal ? "🟢 YES" : "🔴 NO"}
+  - 활성 상태 (notDisabled): ${status.notDisabled ? "🟢 YES" : "🔴 NO"}
+  - 클릭 수행 (clicked): ${status.clicked ? "🟢 YES" : "🔴 NO"}
+  - 실패 감지 (clickFailed): ${status.clickFailed ? "🔴 DETECTED" : "🟢 NO"}
+  - 차단 가드 감지 (enforcementShield): ${status.enforcementShield ? "🔴 DETECTED" : "🟢 NO"}`;
+
+      const logs = res.skipLogs && res.skipLogs.length > 0 ? res.skipLogs.join(', ') : '기록 없음';
+
+      const reportText = `=== YouTube Ad Full Watch 스킵 실패 제보 ===
+제보 시간: ${timeStr}
+누적 클릭 수: ${res.skippedCount || 0}회
+실제 시청 시간: ${formatTime(res.videoTimeWatched || 0)}
+광고 대기 시간: ${formatTime(res.adTimeWasted || 0)}
+최근 스킵 로그: [${logs}]
+
+[실시간 돔 감지 상태]${statusText}
+=============================================`;
+
+      copyToClipboard(reportText, reportSkipFailedBtn, "제보 로그 복사 완료!");
+    });
+  });
+
+  // 5. 차단 가드 제보 버튼 클립보드 복사 이벤트
+  reportEnforcementBtn.addEventListener('click', () => {
+    chrome.storage.local.get(['enforcementError'], (res) => {
+      if (!res.enforcementError) {
+        alert('기록된 차단 가드(경고 배너) 데이터가 없습니다. 차단 가드가 발견된 상황에서만 제보할 수 있습니다.');
+        return;
+      }
+      const errorInfo = res.enforcementError;
+      const reportText = `=== YouTube Ad Full Watch 차단 감지 제보 ===
+발생 시간: ${errorInfo.time}
+감지 셀렉터: ${errorInfo.selector}
+HTML 데이터 스니펫:
+${errorInfo.html}
+=============================================`;
+
+      copyToClipboard(reportText, reportEnforcementBtn, "차단 로그 복사 완료!");
+    });
+  });
+
+  // 6. 실시간 수치 갱신 리스너
   chrome.storage.onChanged.addListener((changes, namespace) => {
     if (changes.skippedCount) {
       animateScale(skipCounter, changes.skippedCount.newValue || 0);
@@ -74,30 +150,16 @@ document.addEventListener('DOMContentLoaded', () => {
     if (changes.adTimeWasted) {
       adTimeCounter.textContent = formatTime(changes.adTimeWasted.newValue || 0);
     }
-    if (changes.skipLogs) {
-      updateLogsUI(changes.skipLogs.newValue || []);
+    if (changes.currentAdStatus) {
+      updateLightsUI(changes.currentAdStatus.newValue || {});
     }
     if (changes.enforcementError) {
       if (changes.enforcementError.newValue) {
-        showError(changes.enforcementError.newValue);
+        reportEnforcementBtn.classList.add('guard-warning');
       } else {
-        hideError();
+        reportEnforcementBtn.classList.remove('guard-warning');
       }
     }
-  });
-
-  // 에러 복사 버튼 클릭 이벤트
-  copyErrorBtn.addEventListener('click', () => {
-    if (!currentErrorText) return;
-    navigator.clipboard.writeText(currentErrorText).then(() => {
-      const originalHTML = copyErrorBtn.innerHTML;
-      copyErrorBtn.innerHTML = '<span>복사 완료!</span>';
-      setTimeout(() => {
-        copyErrorBtn.innerHTML = originalHTML;
-      }, 1500);
-    }).catch(err => {
-      console.error('클립보드 복사 실패:', err);
-    });
   });
 
   // 상태 UI 업데이트 함수
@@ -113,59 +175,71 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 에러 경고 노출 함수
-  function showError(errorInfo) {
-    errorBanner.style.display = 'flex';
-    errorBody.textContent = `[${errorInfo.time}] 감지 셀렉터: ${errorInfo.selector}\nHTML 구조가 스토리지에 기록되었습니다. 아래 버튼을 눌러 복사 후 개발자에게 제보해주세요.`;
-    currentErrorText = `=== YouTube Ad Full Watch 차단 감지 제보 ===\n발생 시간: ${errorInfo.time}\n감지 셀렉터: ${errorInfo.selector}\nHTML 데이터 스니펫:\n${errorInfo.html}\n=============================================`;
-  }
+  // 신호등 UI 동적 제어 함수
+  function updateLightsUI(status) {
+    const keys = Object.keys(lights);
+    keys.forEach(key => {
+      const el = lights[key];
+      if (!el) return;
 
-  // 에러 경고 숨김 함수
-  function hideError() {
-    errorBanner.style.display = 'none';
-    errorBody.textContent = '';
-    currentErrorText = '';
-  }
-
-  // 최근 자동 클릭 기록 UI 업데이트 함수
-  function updateLogsUI(logs) {
-    logsList.innerHTML = '';
-    if (!logs || logs.length === 0) {
-      const li = document.createElement('li');
-      li.className = 'empty-log';
-      li.textContent = '기록 없음';
-      logsList.appendChild(li);
-      return;
-    }
-    logs.forEach(time => {
-      const li = document.createElement('li');
-      li.innerHTML = `<span class="log-desc">광고 건너뛰기 클릭 대행</span><span class="log-time">${time}</span>`;
-      logsList.appendChild(li);
+      // 실패 감지 신호등만 예외적으로 참일 때 붉은색(error) 경고등으로 작동
+      if (key === 'clickFailed') {
+        if (status[key]) {
+          el.classList.add('error');
+          reportSkipFailedBtn.classList.add('failed-warning');
+        } else {
+          el.classList.remove('error');
+          reportSkipFailedBtn.classList.remove('failed-warning');
+        }
+      } else {
+        if (status[key]) {
+          el.classList.add('active');
+        } else {
+          el.classList.remove('active');
+        }
+      }
     });
   }
 
-  // 누적 초(second)를 H시간 M분 S초 단위로 변경해주는 포맷터
+  // 누적 초(second)를 D HH:mm:SS 단위로 변경해주는 포맷터
   function formatTime(seconds) {
-    const sec = Math.round(seconds || 0);
-    if (sec < 60) {
-      return `${sec}초`;
-    }
-    const min = Math.floor(sec / 60);
-    if (min < 60) {
-      return `${min}분 ${sec % 60}초`;
-    }
-    const hour = Math.floor(min / 60);
-    const remainingMin = min % 60;
-    // 1시간 이상인 경우 레이아웃 편의성을 위해 초(second) 표기를 생략함
-    return `${hour}시간 ${remainingMin}분`;
+    const totalSecs = Math.round(seconds || 0);
+    if (totalSecs < 0) return '0 00:00:00';
+
+    const days = Math.floor(totalSecs / 86400);
+    const hours = Math.floor((totalSecs % 86400) / 3600);
+    const minutes = Math.floor((totalSecs % 3600) / 60);
+    const secs = totalSecs % 60;
+
+    const pad = (num) => String(num).padStart(2, '0');
+    
+    // 9999일 한계값 방어 처리
+    const displayDays = Math.min(days, 9999);
+
+    return `${displayDays} ${pad(hours)}:${pad(minutes)}:${pad(secs)}`;
   }
 
-  // 숫자 변경 시 톡 튀는 스케일 애니메이션 효과
+  // 클립보드 복사 함수
+  function copyToClipboard(text, buttonEl, successText) {
+    navigator.clipboard.writeText(text).then(() => {
+      const originalHTML = buttonEl.innerHTML;
+      buttonEl.innerHTML = `<span>${successText}</span>`;
+      buttonEl.classList.add('copied');
+      setTimeout(() => {
+        buttonEl.innerHTML = originalHTML;
+        buttonEl.classList.remove('copied');
+      }, 1500);
+    }).catch(err => {
+      console.error('클립보드 복사 실패:', err);
+    });
+  }
+
+  // 숫자 변경 시 스케일 애니메이션 효과
   function animateScale(element, targetValue) {
     const startValue = parseInt(element.textContent) || 0;
     if (startValue === targetValue) return;
 
-    element.style.transform = 'scale(1.25)';
+    element.style.transform = 'scale(1.22)';
     element.style.transition = 'transform 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.275)';
     
     setTimeout(() => {

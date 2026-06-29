@@ -194,6 +194,25 @@
     }
   }
 
+  let clickExecutedTime = null;
+  let clickFailedDetected = false;
+  let lastStatusJson = "";
+
+  // 실시간 광고 분석 상태 보관 및 전송
+  function updateAdStatus(newStatus) {
+    const json = JSON.stringify(newStatus);
+    if (json !== lastStatusJson) {
+      lastStatusJson = json;
+      try {
+        if (isContextValid() && chrome.storage && chrome.storage.local) {
+          chrome.storage.local.set({ currentAdStatus: newStatus });
+        }
+      } catch (err) {
+        // ignore
+      }
+    }
+  }
+
   // 광고 감지 및 스킵 메인 로직
   function checkAndSkipAds() {
     if (!isContextValid()) return;
@@ -237,8 +256,22 @@
       lastCheckTime = null;
     }
 
+    // 유튜브 차단 가드(경고창) 실시간 감지 여부
+    let shieldDetected = false;
+    const shieldSelectors = [
+      'ytd-enforcement-message-view-model',
+      'yt-playability-error-supported-renderers',
+      '.yt-playability-error-supported-renderers'
+    ];
+    for (const selector of shieldSelectors) {
+      const shieldEl = document.querySelector(selector);
+      if (shieldEl && (shieldEl.offsetWidth > 0 || shieldEl.offsetHeight > 0)) {
+        shieldDetected = true;
+        break;
+      }
+    }
+
     if (player && player.classList.contains('ad-showing')) {
-      // 광고 재생 상태로 감지됨
       adPlaying = true;
 
       // 0단계: 광고가 나오면 자동으로 음소거하고, 원래 음소거 상태를 백업
@@ -250,7 +283,6 @@
             video.muted = true;
             console.log(`🔇 [YT Ad Full Watch] 광고 진입: 자동 음소거 활성화 (원래 음소거 상태: ${originalMuted})`);
           } else if (!video.muted) {
-            // 유튜브 내부 플레이어 스크립트가 강제로 음소거를 해제하는 현상 방지
             video.muted = true;
           }
         } catch (muteErr) {
@@ -258,7 +290,25 @@
         }
       }
 
-      // 1단계: 카운트다운이 실행 중인지 정밀 진단 (카운트다운 텍스트나 프리뷰 컨테이너가 화면에 표시되고 있는 경우)
+      // 실시간 진단 신호등 상태 구조체 구성
+      let status = {
+        tagDetected: false,
+        rectFound: false,
+        visible: false,
+        timerCompleted: false,
+        opacityNormal: false,
+        notDisabled: false,
+        clicked: clickExecutedTime !== null,
+        clickFailed: false,
+        enforcementShield: shieldDetected
+      };
+
+      // 클릭 시뮬레이션 후 3.5초가 넘게 흘렀는데도 여전히 광고 재생 상태(ad-showing)가 유지되는지 확인
+      if (clickExecutedTime !== null && (Date.now() - clickExecutedTime > 3500)) {
+        clickFailedDetected = true;
+      }
+      status.clickFailed = clickFailedDetected;
+
       const countdownSelectors = [
         '.ytp-ad-preview-container',
         '.ytp-ad-preview-text',
@@ -266,32 +316,7 @@
         '[class*="preview-container"]',
         '[class*="duration-remaining"]'
       ];
-      for (const sel of countdownSelectors) {
-        const countdownEl = player.querySelector(sel);
-        if (countdownEl) {
-          const rect = countdownEl.getBoundingClientRect();
-          if (rect.width > 0 && rect.height > 0 && window.getComputedStyle(countdownEl).display !== 'none') {
-            // 카운트다운 관련 요소가 아직 화면에 렌더링 중이므로 대기
-            return;
-          }
-        }
-      }
 
-      // 현대식 스킵 버튼이 돔에 존재하지만, 아직 활성화되지 않은 카운트다운 단계인지 정밀 진단
-      const skipBtnModern = player.querySelector('.ytp-ad-skip-button-modern') || player.querySelector('.ytp-ad-skip-button');
-      if (skipBtnModern) {
-        const style = window.getComputedStyle(skipBtnModern);
-        const opacity = parseFloat(style.opacity || '1');
-        const rect = skipBtnModern.getBoundingClientRect();
-        const isHidden = style.display === 'none' || style.visibility === 'hidden' || (rect.width === 0 && rect.height === 0);
-        
-        // 현대식 스킵 버튼이 비활성(카운트다운 중) 상태라면 성급하게 바깥 컨테이너를 클릭하지 않고 완독 대기
-        if (opacity <= 0.8 || isHidden) {
-          return;
-        }
-      }
-
-      // 2단계: 광고 건너뛰기 버튼 존재 여부 확인 및 클릭 시도
       const selectors = [
         '.ytp-ad-skip-button-modern',   // 최신형 현대식 버튼
         '.ytp-ad-skip-button',          // 전통적 클래식 버튼
@@ -303,113 +328,124 @@
         '[class*="ytp-skip-ad-button"]' // 컨테이너 (최후 보루)
       ];
 
+      // DOM 내에 존재하는 첫 번째 후보 버튼 요소 탐색
+      let targetBtn = null;
+      let matchedSelector = null;
       for (const selector of selectors) {
-        try {
-          // 오직 비디오 플레이어 내부에 위치한 버튼만 조회
-          const btn = player.querySelector(selector);
+        const btn = player.querySelector(selector);
+        if (btn) {
+          targetBtn = btn;
+          matchedSelector = selector;
+          break;
+        }
+      }
 
-          if (btn) {
-            // 4대 스킵 활성화 조건 확인
-            
-            // 1. 물리적 화면 노출 여부 검증 (Strict Rendering)
-            const rect = btn.getBoundingClientRect();
-            const isVisible = rect.width > 0 && rect.height > 0 && 
-                              window.getComputedStyle(btn).display !== 'none' && 
-                              window.getComputedStyle(btn).visibility !== 'hidden';
-            if (!isVisible) {
-              continue;
+      if (targetBtn) {
+        status.tagDetected = true;
+        
+        // 1. 물리적 화면 노출 여부 검증 (Strict Rendering)
+        const rect = targetBtn.getBoundingClientRect();
+        status.rectFound = rect.width > 0 && rect.height > 0;
+        
+        const style = window.getComputedStyle(targetBtn);
+        status.visible = style.display !== 'none' && style.visibility !== 'hidden';
+
+        // 2. 비활성화 속성 검증 (disabled 혹은 aria-disabled="true")
+        status.notDisabled = !targetBtn.disabled && targetBtn.getAttribute('aria-disabled') !== 'true';
+
+        // 3. 카운트다운 진행 중(텍스트 내 숫자 포함 여부 및 카운트다운 배너 노출 여부) 판별
+        let countdownActive = false;
+        for (const sel of countdownSelectors) {
+          const countdownEl = player.querySelector(sel);
+          if (countdownEl) {
+            const cRect = countdownEl.getBoundingClientRect();
+            if (cRect.width > 0 && cRect.height > 0 && window.getComputedStyle(countdownEl).display !== 'none') {
+              countdownActive = true;
+              break;
             }
-
-            // 2. 비활성화 속성 검증 (disabled 혹은 aria-disabled="true")
-            if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {
-              continue;
-            }
-
-            // 3. 카운트다운 진행 중(텍스트 내 숫자 포함 여부) 판별
-            const text = btn.textContent || "";
-            if (/\d/.test(text)) {
-              // 텍스트 내 숫자가 있다면 아직 카운트다운 중이므로 시도하지 않음
-              continue;
-            }
-
-            // 4. 불투명도 검증 (opacity > 0.8)
-            const style = window.getComputedStyle(btn);
-            const opacity = parseFloat(style.opacity || '1');
-            if (opacity <= 0.8) {
-              continue;
-            }
-
-            // 모든 4대 조건이 완벽히 충족된 경우 클릭 시퀀스 실행
-            if (!clickScheduled) {
-              clickScheduled = true;
-              const delay = 1000 + Math.random() * 1500; // 1.0초 ~ 2.5초 사이의 무작위 대기 시간
-              const hoverDuration = 150 + Math.random() * 350; // 0.15초 ~ 0.5초 사이의 무작위 호버 유지 시간
-              const hoverDelay = delay - hoverDuration;
-
-              console.log(`⏳ [YT Ad Full Watch] 활성화된 스킵 버튼 감지! ${Math.round(hoverDelay)}ms 후 호버 진입, ${Math.round(delay)}ms 후 클릭 예정...`);
-
-              // 1. 호버 진입 시뮬레이션 예약
-              setTimeout(() => {
-                if (!isContextValid()) return;
-                const currentBtn = player.querySelector(selector);
-                if (currentBtn) {
-                  const currentRect = currentBtn.getBoundingClientRect();
-                  const currentVisible = currentRect.width > 0 && currentRect.height > 0 && 
-                                         window.getComputedStyle(currentBtn).display !== 'none' && 
-                                         window.getComputedStyle(currentBtn).visibility !== 'hidden';
-                  if (currentVisible && !currentBtn.disabled && currentBtn.getAttribute('aria-disabled') !== 'true') {
-                    simulateHover(currentBtn);
-                  }
-                }
-              }, hoverDelay);
-
-              // 2. 최종 마우스 클릭 시뮬레이션 예약
-              setTimeout(() => {
-                if (!isContextValid()) return;
-                const currentBtn = player.querySelector(selector);
-                if (currentBtn) {
-                  const currentRect = currentBtn.getBoundingClientRect();
-                  const currentVisible = currentRect.width > 0 && currentRect.height > 0 && 
-                                         window.getComputedStyle(currentBtn).display !== 'none' && 
-                                         window.getComputedStyle(currentBtn).visibility !== 'hidden';
-                  if (currentVisible && !currentBtn.disabled && currentBtn.getAttribute('aria-disabled') !== 'true') {
-                    simulateClick(currentBtn);
-                    console.log(`🎯 [YT Ad Full Watch] 지연 클릭 실행 완료! (셀렉터: ${selector})`);
-
-                    // 클릭이 수행된 정확한 시스템 시간 기록 저장
-                    try {
-                      if (isContextValid() && chrome.storage && chrome.storage.local) {
-                        chrome.storage.local.get(['skipLogs'], (res) => {
-                          if (!isContextValid()) return;
-                          let logs = res.skipLogs || [];
-                          const d = new Date();
-                          const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-                          logs.unshift(timeStr);
-                          if (logs.length > 5) {
-                            logs = logs.slice(0, 5);
-                          }
-                          chrome.storage.local.set({ skipLogs: logs });
-                        });
-                      }
-                    } catch (err) {
-                      console.warn("⚠️ [YT Ad Full Watch] 최근 클릭 타임스탬프 기록 실패:", err);
-                    }
-                  }
-                }
-                clickScheduled = false; // 스케줄 상태 리셋
-              }, delay);
-            }
-            break;
           }
-        } catch (e) {
-          // 예외 무시
+        }
+        const text = targetBtn.textContent || "";
+        const hasDigits = /\d/.test(text);
+        status.timerCompleted = !countdownActive && !hasDigits;
+
+        // 4. 불투명도 검증 (opacity > 0.8)
+        status.opacityNormal = parseFloat(style.opacity || '1') > 0.8;
+      }
+
+      // 실시간 상태 스토리지 갱신
+      updateAdStatus(status);
+
+      // 4대 조건이 모두 충족되었을 경우에만 스킵 클릭 스케줄러 기동
+      if (targetBtn && status.rectFound && status.visible && status.timerCompleted && status.opacityNormal && status.notDisabled) {
+        if (!clickScheduled && !clickExecutedTime) {
+          clickScheduled = true;
+          const delay = 1000 + Math.random() * 1500; // 1.0초 ~ 2.5초 사이의 무작위 대기 시간
+          const hoverDuration = 150 + Math.random() * 350; // 0.15초 ~ 0.5초 사이의 무작위 호버 유지 시간
+          const hoverDelay = delay - hoverDuration;
+
+          console.log(`⏳ [YT Ad Full Watch] 활성화된 스킵 버튼 감지! ${Math.round(hoverDelay)}ms 후 호버 진입, ${Math.round(delay)}ms 후 클릭 예정...`);
+
+          // 1. 호버 진입 시뮬레이션 예약
+          setTimeout(() => {
+            if (!isContextValid()) return;
+            const currentBtn = player.querySelector(matchedSelector);
+            if (currentBtn) {
+              const currentRect = currentBtn.getBoundingClientRect();
+              const currentVisible = currentRect.width > 0 && currentRect.height > 0 && 
+                                     window.getComputedStyle(currentBtn).display !== 'none' && 
+                                     window.getComputedStyle(currentBtn).visibility !== 'hidden';
+              if (currentVisible && !currentBtn.disabled && currentBtn.getAttribute('aria-disabled') !== 'true') {
+                simulateHover(currentBtn);
+              }
+            }
+          }, hoverDelay);
+
+          // 2. 최종 마우스 클릭 시뮬레이션 예약
+          setTimeout(() => {
+            if (!isContextValid()) return;
+            const currentBtn = player.querySelector(matchedSelector);
+            if (currentBtn) {
+              const currentRect = currentBtn.getBoundingClientRect();
+              const currentVisible = currentRect.width > 0 && currentRect.height > 0 && 
+                                     window.getComputedStyle(currentBtn).display !== 'none' && 
+                                     window.getComputedStyle(currentBtn).visibility !== 'hidden';
+              if (currentVisible && !currentBtn.disabled && currentBtn.getAttribute('aria-disabled') !== 'true') {
+                simulateClick(currentBtn);
+                clickExecutedTime = Date.now(); // 클릭 수행 시점 기록
+                console.log(`🎯 [YT Ad Full Watch] 지연 클릭 실행 완료! (셀렉터: ${matchedSelector})`);
+
+                // 클릭이 수행된 정확한 시스템 시간 기록 저장
+                try {
+                  if (isContextValid() && chrome.storage && chrome.storage.local) {
+                    chrome.storage.local.get(['skipLogs'], (res) => {
+                      if (!isContextValid()) return;
+                      let logs = res.skipLogs || [];
+                      const d = new Date();
+                      const timeStr = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+                      logs.unshift(timeStr);
+                      if (logs.length > 5) {
+                        logs = logs.slice(0, 5);
+                      }
+                      chrome.storage.local.set({ skipLogs: logs });
+                    });
+                  }
+                } catch (err) {
+                  console.warn("⚠️ [YT Ad Full Watch] 최근 클릭 타임스탬프 기록 실패:", err);
+                }
+              }
+            }
+            clickScheduled = false; // 스케줄 상태 리셋
+          }, delay);
         }
       }
     } else {
       // 광고가 재생되고 있지 않은 평상시 상태
       if (adPlaying) {
         adPlaying = false;
-        clickScheduled = false; // 광고가 해제되면 혹시 남아있을 대기 스케줄 즉시 초기화
+        clickScheduled = false;
+        clickExecutedTime = null;   // 클릭 시점 리셋
+        clickFailedDetected = false; // 실패 감지 리셋
         console.log("🎉 [YT Ad Full Watch] 광고 건너뛰기 완료!");
 
         // 광고가 끝났으니 원래 음소거 상태 복원
@@ -433,6 +469,19 @@
           });
         }
       }
+      
+      // 평상시에도 실시간 상태는 비활성화로 초기화 전송
+      updateAdStatus({
+        tagDetected: false,
+        rectFound: false,
+        visible: false,
+        timerCompleted: false,
+        opacityNormal: false,
+        notDisabled: false,
+        clicked: false,
+        clickFailed: false,
+        enforcementShield: shieldDetected
+      });
     }
   }
 
