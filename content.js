@@ -31,10 +31,14 @@
   let adPlaying = false;      // 현재 광고가 재생 중인지 기록하는 상태 변수
   let lastCheckTime = null;   // 이전 프레임 시간 기록용 변수
   let clickScheduled = false; // 지연 클릭 스케줄 예약 상태 플래그
-  let s1BackupTimer = null;
   let lastAdVisibilityChangeTime = null;
   let observerAttached = false;
   let observer = null;
+
+  // 대시보드 스킵 상세 제어 설정 변수
+  let delayClick = true;
+  let randomClick = true;
+  let virtualClick = true;
 
   // 현재 비디오 세션 시청 시간 및 광고 시청 시간
   let currentVideoTime = 0;
@@ -89,12 +93,15 @@
   // 크로스 오리진 iframe 등 확장 프로그램 API 접근이 막힌 환경에서의 에러 방지 처리
   try {
     if (isContextValid() && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(['enabled'], (result) => {
+      chrome.storage.local.get(['enabled', 'delayClick', 'randomClick', 'virtualClick'], (result) => {
         if (!isContextValid()) return;
         if (result.enabled !== undefined) {
           enabled = result.enabled;
           console.log("🔍 [YT Ad Full Watch] 현재 작동 상태:", enabled ? "ON" : "OFF");
         }
+        if (result.delayClick !== undefined) delayClick = result.delayClick;
+        if (result.randomClick !== undefined) randomClick = result.randomClick;
+        if (result.virtualClick !== undefined) virtualClick = result.virtualClick;
       });
 
       chrome.storage.onChanged.addListener((changes, namespace) => {
@@ -103,6 +110,9 @@
           enabled = changes.enabled.newValue;
           console.log("🔄 [YT Ad Full Watch] 작동 상태 변경됨:", enabled ? "ON" : "OFF");
         }
+        if (changes.delayClick) delayClick = changes.delayClick.newValue !== false;
+        if (changes.randomClick) randomClick = changes.randomClick.newValue !== false;
+        if (changes.virtualClick) virtualClick = changes.virtualClick.newValue !== false;
       });
     }
   } catch (e) {
@@ -174,10 +184,16 @@
       const targetEl = innerBtn || element;
 
       const rect = targetEl.getBoundingClientRect();
-      const randomXOffset = rect.width * (0.2 + Math.random() * 0.6);
-      const randomYOffset = rect.height * (0.2 + Math.random() * 0.6);
-      const clientX = rect.left + randomXOffset;
-      const clientY = rect.top + randomYOffset;
+      let clientX, clientY;
+      if (randomClick) {
+        const randomXOffset = rect.width * (0.2 + Math.random() * 0.6);
+        const randomYOffset = rect.height * (0.2 + Math.random() * 0.6);
+        clientX = rect.left + randomXOffset;
+        clientY = rect.top + randomYOffset;
+      } else {
+        clientX = rect.left + rect.width / 2;
+        clientY = rect.top + rect.height / 2;
+      }
       const screenX = (window.screenX || 0) + clientX;
       const screenY = (window.screenY || 0) + clientY;
 
@@ -712,15 +728,19 @@
       if (targetBtn && status.rectFound && status.visible && status.timerCompleted && status.opacityNormal && status.notDisabled && status.classClickable) {
         if (!clickScheduled && !clickExecutedTime) {
           clickScheduled = true;
-          const delay = 1000 + Math.random() * 1500; // 1.0초 ~ 2.5초 사이의 무작위 대기 시간
-          const hoverDuration = 150 + Math.random() * 350; // 0.15초 ~ 0.5초 사이의 무작위 호버 유지 시간
-          const hoverDelay = delay - hoverDuration;
+          const delay = delayClick ? (1000 + Math.random() * 1500) : 0; // 지연클릭 ON이면 1.0~2.5초 지연, OFF면 즉시(0초) 지연
+          const hoverDuration = delayClick ? (150 + Math.random() * 350) : 0;
+          const hoverDelay = Math.max(0, delay - hoverDuration);
 
           scheduledDelaySec = (delay / 1000).toFixed(2);
           const rect = targetBtn.getBoundingClientRect();
-          const pctX = 20 + Math.round(Math.random() * 60);
-          const pctY = 20 + Math.round(Math.random() * 60);
-          scheduledCoordinates = `X:+${pctX}%, Y:+${pctY}%`;
+          if (randomClick) {
+            const pctX = 20 + Math.round(Math.random() * 60);
+            const pctY = 20 + Math.round(Math.random() * 60);
+            scheduledCoordinates = `X:+${pctX}%, Y:+${pctY}%`;
+          } else {
+            scheduledCoordinates = "Center (50%, 50%)";
+          }
 
           // 조건 만족 시각 기록
           if (isContextValid() && chrome.storage && chrome.storage.local) {
@@ -730,19 +750,21 @@
           console.log(`⏳ [YT Ad Full Watch] 활성화된 스킵 버튼 감지! ${Math.round(hoverDelay)}ms 후 호버 진입, ${Math.round(delay)}ms 후 클릭 예정...`);
 
           // 1. 호버 진입 시뮬레이션 예약
-          setTimeout(() => {
-            if (!isContextValid()) return;
-            const currentBtn = player.querySelector(matchedSelector);
-            if (currentBtn) {
-              const currentRect = currentBtn.getBoundingClientRect();
-              const currentVisible = currentRect.width > 0 && currentRect.height > 0 && 
-                                     window.getComputedStyle(currentBtn).display !== 'none' && 
-                                     window.getComputedStyle(currentBtn).visibility !== 'hidden';
-              if (currentVisible && !currentBtn.disabled && currentBtn.getAttribute('aria-disabled') !== 'true') {
-                simulateHover(currentBtn);
+          if (delayClick) {
+            setTimeout(() => {
+              if (!isContextValid()) return;
+              const currentBtn = player.querySelector(matchedSelector);
+              if (currentBtn) {
+                const currentRect = currentBtn.getBoundingClientRect();
+                const currentVisible = currentRect.width > 0 && currentRect.height > 0 && 
+                                       window.getComputedStyle(currentBtn).display !== 'none' && 
+                                       window.getComputedStyle(currentBtn).visibility !== 'hidden';
+                if (currentVisible && !currentBtn.disabled && currentBtn.getAttribute('aria-disabled') !== 'true') {
+                  simulateHover(currentBtn);
+                }
               }
-            }
-          }, hoverDelay);
+            }, hoverDelay);
+          }
 
           // 2. 최종 마우스 클릭 시뮬레이션 예약 (클릭 직전 투명도 및 클래스 최종 검증)
           setTimeout(() => {
@@ -762,7 +784,29 @@
 
               // 클릭 실행 직전에 투명도 및 클래스가 활성화(ON) 상태인지 2차 최종 검증!
               if (rectFound && visible && opacityNormal && notDisabled && classClickable) {
-                simulateClick(currentBtn);
+                if (virtualClick) {
+                  // 가상 클릭 ON: 디버거 API를 경유하여 신뢰할 수 있는 클릭 (isTrusted = true) 전송
+                  let x, y;
+                  if (randomClick) {
+                    const randomXOffset = currentRect.width * (0.2 + Math.random() * 0.6);
+                    const randomYOffset = currentRect.height * (0.2 + Math.random() * 0.6);
+                    x = currentRect.left + randomXOffset;
+                    y = currentRect.top + randomYOffset;
+                  } else {
+                    x = currentRect.left + currentRect.width / 2;
+                    y = currentRect.top + currentRect.height / 2;
+                  }
+                  console.log("⚡ [YT ad watch & click] 가상 클릭 ON: 디버거를 통한 신뢰 클릭 전송");
+                  chrome.runtime.sendMessage({
+                    action: "trigger_s1_debugger",
+                    x: x,
+                    y: y
+                  });
+                } else {
+                  // 가상 클릭 OFF: 브라우저 합성 이벤트 (isTrusted = false) 전송
+                  console.log("⚡ [YT ad watch & click] 가상 클릭 OFF: 이벤트 합성을 통한 가상 클릭 전송");
+                  simulateClick(currentBtn);
+                }
                 clickExecutedTime = Date.now(); // 클릭 수행 시점 기록
                 
                 // 클릭 시도 시각 기록
@@ -770,27 +814,7 @@
                   chrome.storage.local.set({ lastClickAttemptTime: formatFullTime(new Date()) });
                 }
 
-                console.log(`🎯 [YT ad watch & click] 지연 클릭 실행 완료! (셀렉터: ${matchedSelector})`);
-
-                // 일반 클릭 시도 후 1초 뒤 여전히 광고 활성 상태인지 점검하여 S1 디버거 자동 기동
-                if (s1BackupTimer) clearTimeout(s1BackupTimer);
-                s1BackupTimer = setTimeout(() => {
-                  const checkPlayer = document.querySelector('.html5-video-player');
-                  if (isContextValid() && isAdActive()) {
-                    const testBtn = findSkipButton();
-                    if (testBtn) {
-                      const rect = testBtn.getBoundingClientRect();
-                      const x = rect.left + rect.width / 2;
-                      const y = rect.top + rect.height / 2;
-                      console.log("⚠️ [YT ad watch & click] 일반 클릭 실행 1초 경과 후에도 광고 중포착! S1 디버거 백업 자동 작동.");
-                      chrome.runtime.sendMessage({
-                        action: "trigger_s1_debugger",
-                        x: x,
-                        y: y
-                      });
-                    }
-                  }
-                }, 1000);
+                console.log(`🎯 [YT ad watch & click] 클릭 실행 완료! (셀렉터: ${matchedSelector})`);
 
                 // 클릭이 수행된 정확한 시스템 시간 기록 저장
                 try {
@@ -972,8 +996,29 @@
   function forceExecuteClick() {
     const targetBtn = findSkipButton();
     if (targetBtn) {
-      console.log("⚡ [YT ad watch & click] 스킵 버튼 찾음! 강제 3중 클릭을 수행합니다.");
-      simulateClick(targetBtn);
+      console.log("⚡ [YT ad watch & click] 스킵 버튼 찾음! 강제 클릭을 수행합니다.");
+      if (virtualClick) {
+        const rect = targetBtn.getBoundingClientRect();
+        let x, y;
+        if (randomClick) {
+          const randomXOffset = rect.width * (0.2 + Math.random() * 0.6);
+          const randomYOffset = rect.height * (0.2 + Math.random() * 0.6);
+          x = rect.left + randomXOffset;
+          y = rect.top + randomYOffset;
+        } else {
+          x = rect.left + rect.width / 2;
+          y = rect.top + rect.height / 2;
+        }
+        console.log("⚡ [YT ad watch & click] 강제 클릭: 가상 클릭(CDP)으로 수행합니다.");
+        chrome.runtime.sendMessage({
+          action: "trigger_s1_debugger",
+          x: x,
+          y: y
+        });
+      } else {
+        console.log("⚡ [YT ad watch & click] 강제 클릭: 이벤트 합성 방식으로 수행합니다.");
+        simulateClick(targetBtn);
+      }
       
       clickExecutedTime = Date.now();
       if (isContextValid() && chrome.storage && chrome.storage.local) {

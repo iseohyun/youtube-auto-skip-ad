@@ -29,12 +29,18 @@ document.addEventListener('DOMContentLoaded', () => {
   const currentWatchTime = document.getElementById('current-watch-time');
   const totalAdTime = document.getElementById('total-ad-time');
   const currentAdTime = document.getElementById('current-ad-time');
-  const resetButton = document.getElementById('reset-button');
-  const reportSkipFailedBtn = document.getElementById('report-skip-failed-btn');
-  const reportEnforcementBtn = document.getElementById('report-enforcement-btn');
-  const btnCopyHistory = document.getElementById('btn-copy-history');
-  const labelCopyHistory = document.getElementById('label-copy-history');
-  const btnCopyErrors = document.getElementById('btn-copy-errors');
+
+  // 그룹 3: 실행 및 스킵 설정 버튼
+  const btnForceClick = document.getElementById('btn-force-click');
+  const btnDelayClick = document.getElementById('btn-delay-click');
+  const btnRandomClick = document.getElementById('btn-random-click');
+  const btnVirtualClick = document.getElementById('btn-virtual-click');
+
+  // 그룹 4: 로그 복사 버튼
+  const btnCopyAll = document.getElementById('btn-copy-all');
+  const btnResetLogs = document.getElementById('btn-reset-logs');
+  const btnResetWatchTime = document.getElementById('btn-reset-watch-time');
+  const btnResetDashboard = document.getElementById('btn-reset-dashboard');
 
   const cardTotalAdTime = document.getElementById('card-total-ad-time');
   const cardCurrentAdTime = document.getElementById('card-current-ad-time');
@@ -50,12 +56,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 그룹 3: 실행 및 클릭 분석 수치
-  const valClicked = document.getElementById('val-clicked');
-  const valWarning = document.getElementById('val-warning');
-  const valDelay = document.getElementById('val-delay');
-  const valCoordinates = document.getElementById('val-coordinates');
-
   // 신호등 요소 매핑
   const lights = {
     tagDetected: document.getElementById('light-tag-detected'),
@@ -63,42 +63,34 @@ document.addEventListener('DOMContentLoaded', () => {
     visible: document.getElementById('light-visible'),
     videoPlaying: document.getElementById('light-video-playing'),
     timerCompleted: document.getElementById('light-timer-detected'),
-    opacityNormal: document.getElementById('light-opacity-normal'),
-    notDisabled: document.getElementById('light-not-disabled'),
-    classClickable: document.getElementById('light-class-clickable'),
-    clicked: document.getElementById('light-clicked'),
-    clickFailed: document.getElementById('light-click-failed')
+    opacityNormal: document.getElementById('light-opacity-normal')
   };
 
   // 1. 초기 상태 불러오기
   chrome.storage.local.get(
-    ['enabled', 'skippedCount', 'videoTimeWatched', 'adTimeWasted', 'currentVideoTime', 'currentAdTime', 'skipLogs', 'enforcementError', 'currentAdStatus'],
+    ['enabled', 'skippedCount', 'videoTimeWatched', 'adTimeWasted', 'currentVideoTime', 'currentAdTime', 'skipLogs', 'enforcementError', 'currentAdStatus', 'delayClick', 'randomClick', 'virtualClick'],
     (result) => {
       // 작동 상태 설정 (기본값: true)
       const isEnabled = result.enabled !== false;
       toggleSwitch.checked = isEnabled;
 
       // 각 카운터 데이터 노출
-      const count = result.skippedCount || 0;
-      if (labelCopyHistory) {
-        labelCopyHistory.textContent = `기록: Skip ${count}회`;
-      }
       totalWatchTime.textContent = formatTime(result.videoTimeWatched || 0);
       currentWatchTime.textContent = formatTime(result.currentVideoTime || 0);
       totalAdTime.textContent = formatTime(result.adTimeWasted || 0);
       currentAdTime.textContent = formatTime(result.currentAdTime || 0);
 
+      // 설정 버튼 상태 복원
+      const isDelayOn = result.delayClick !== false;
+      const isRandomOn = result.randomClick !== false;
+      const isVirtualOn = result.virtualClick !== false;
+      updateToggleButtonState(btnDelayClick, isDelayOn);
+      updateToggleButtonState(btnRandomClick, isRandomOn);
+      updateToggleButtonState(btnVirtualClick, isVirtualOn);
+
       // 신호등 및 클릭 수치 초기 상태 업데이트
       updateLightsUI(result.currentAdStatus || {});
-      updateClickSectionUI(result.currentAdStatus || {});
       updateAdHighlight(result.currentAdStatus || {});
-
-      // 차단 경고 기록 존재 여부에 따른 제보 버튼 경고등 설정
-      if (result.enforcementError) {
-        reportEnforcementBtn.classList.add('guard-warning');
-      } else {
-        reportEnforcementBtn.classList.remove('guard-warning');
-      }
     }
   );
 
@@ -108,39 +100,61 @@ document.addEventListener('DOMContentLoaded', () => {
     chrome.storage.local.set({ enabled: isEnabled });
   });
 
-  // 3. 로그 초기화 버튼 이벤트 (시청 기록 및 오류 로그 등 로그 데이터만 리셋)
-  resetButton.addEventListener('click', () => {
-    if (confirm('시청 기록, 스킵 로그 및 내부 오류 로그 내역을 모두 초기화하시겠습니까? (누적 통계는 유지됩니다)')) {
-      chrome.storage.local.set({ 
-        watchHistory: [],
-        skipLogs: [],
-        runtimeErrors: [],
-        enforcementError: null,
-        lastConditionPassTime: null,
-        lastClickAttemptTime: null,
-        lastSkipSuccessTime: null
-      }, () => {
-        chrome.storage.local.get(['skippedCount'], (res) => {
-          const count = res.skippedCount || 0;
-          if (labelCopyHistory) labelCopyHistory.textContent = `기록: Skip ${count}회`;
-        });
-        reportEnforcementBtn.classList.remove('guard-warning');
-        reportSkipFailedBtn.classList.remove('failed-warning');
-      });
+  // 버튼 토글 상태 갱신 헬퍼
+  function updateToggleButtonState(btn, state) {
+    if (!btn) return;
+    if (state) {
+      btn.classList.remove('state-off');
+    } else {
+      btn.classList.add('state-off');
     }
-  });
+  }
 
-  // 3.5. 클릭 수행 행 클릭 시 수동 강제 스킵 대행 이벤트 전송
-  const rowClickPerform = document.getElementById('row-click-perform');
-  if (rowClickPerform) {
-    rowClickPerform.addEventListener('click', () => {
+  // 지연 클릭 설정 변경 리스너
+  if (btnDelayClick) {
+    btnDelayClick.addEventListener('click', () => {
+      chrome.storage.local.get(['delayClick'], (res) => {
+        const nextState = res.delayClick === false; // 기본값 true이므로
+        chrome.storage.local.set({ delayClick: nextState }, () => {
+          updateToggleButtonState(btnDelayClick, nextState);
+        });
+      });
+    });
+  }
+
+  // 랜덤 위치 클릭 설정 변경 리스너
+  if (btnRandomClick) {
+    btnRandomClick.addEventListener('click', () => {
+      chrome.storage.local.get(['randomClick'], (res) => {
+        const nextState = res.randomClick === false; // 기본값 true이므로
+        chrome.storage.local.set({ randomClick: nextState }, () => {
+          updateToggleButtonState(btnRandomClick, nextState);
+        });
+      });
+    });
+  }
+
+  // 가상 클릭 설정 변경 리스너
+  if (btnVirtualClick) {
+    btnVirtualClick.addEventListener('click', () => {
+      chrome.storage.local.get(['virtualClick'], (res) => {
+        const nextState = res.virtualClick === false; // 기본값 true이므로
+        chrome.storage.local.set({ virtualClick: nextState }, () => {
+          updateToggleButtonState(btnVirtualClick, nextState);
+        });
+      });
+    });
+  }
+
+  // 강제 클릭 리스너 바인딩
+  if (btnForceClick) {
+    btnForceClick.addEventListener('click', () => {
       chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
         if (tabs && tabs[0] && tabs[0].id) {
           chrome.tabs.sendMessage(tabs[0].id, { action: "force_click" }, (response) => {
-            // 수신 확인용 애니메이션 효과 유도
-            rowClickPerform.style.borderColor = 'var(--success-color)';
+            btnForceClick.style.borderColor = 'var(--success-color)';
             setTimeout(() => {
-              rowClickPerform.style.borderColor = '';
+              btnForceClick.style.borderColor = '';
             }, 500);
           });
         }
@@ -148,262 +162,156 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 4. 스킵 실패 제보 버튼 클립보드 복사 이벤트
-  reportSkipFailedBtn.addEventListener('click', () => {
-    chrome.storage.local.get([
-      'skippedCount', 'videoTimeWatched', 'adTimeWasted', 'skipLogs', 
-      'currentAdStatus', 'lastAdHtml', 'lastAdTimeHtml',
-      'lastConditionPassTime', 'lastClickAttemptTime', 'lastSkipSuccessTime'
-    ], (res) => {
-      const d = new Date();
-      const timeStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
-      
-      const status = res.currentAdStatus || {};
-      const statusText = `
-  - 버튼 감지 (tagDetected): ${status.tagDetected ? "🟢 YES" : "🔴 NO"}
-  - 위치/크기 (rectFound): ${status.rectFound ? "🟢 YES" : "🔴 NO"}
-  - 가시성 (visible): ${status.visible ? "🟢 YES" : "🔴 NO"}
-  - 재생 중 (videoPlaying): ${status.videoPlaying ? "🟢 YES" : "🔴 NO"}
-  - 타이머 감지 (timerCompleted): ${status.timerCompleted ? "🟢 YES" : "🔴 NO"}${status.remainingTime !== null && !status.timerCompleted ? ` (대기: ${status.remainingTime}초)` : ""}
-  - 투명도 정상 (opacityNormal): ${status.opacityNormal ? "🟢 YES" : "🔴 NO"}
-  - 활성 상태 (notDisabled): ${status.notDisabled ? "🟢 YES" : "🔴 NO"}
-  - 클릭 가능 상태 (classClickable): ${status.classClickable ? "🟢 YES" : "🔴 NO"}
-  - 클릭 수행 (clicked): ${status.clicked ? "🟢 YES" : "🔴 NO"}
-  - 클릭 실패 경고 (clickFailed): ${status.clickFailed ? "🔴 DETECTED" : "🟢 NO"}
-  - 차단 가드 감지 (enforcementShield): ${status.enforcementShield ? "🔴 DETECTED" : "🟢 NO"}`;
+  // 3. 현재 상태 복사 (진단용 전체 로그 및 통계 병합 복사)
+  if (btnCopyAll) {
+    btnCopyAll.addEventListener('click', () => {
+      chrome.storage.local.get([
+        'enabled', 'skippedCount', 'videoTimeWatched', 'adTimeWasted',
+        'currentVideoTime', 'currentAdTime', 'skipLogs', 'enforcementError',
+        'currentAdStatus', 'delayClick', 'randomClick', 'virtualClick',
+        'watchHistory', 'runtimeErrors'
+      ], (res) => {
+        const manifest = chrome.runtime.getManifest();
+        const d = new Date();
+        const timeStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
 
-      // 타임라인 분석 및 진단 
-      const lastPass = res.lastConditionPassTime || "기록 없음";
-      const lastClick = res.lastClickAttemptTime || "기록 없음";
-      const lastSuccess = res.lastSkipSuccessTime || "기록 없음";
+        // 1. 시스템 정보
+        let reportText = `=== YT ad watch & click 현재상태 통합 진단 리포트 ===\n`;
+        reportText += `복사 시각: ${timeStr}\n`;
+        reportText += `확장 프로그램 버전: ${manifest.version} (${manifest.version_name || 'N/A'})\n`;
+        reportText += `선언된 권한: ${JSON.stringify(manifest.permissions || [])}\n`;
+        reportText += `chrome.debugger API 활성 상태: ${typeof chrome.debugger !== 'undefined'}\n\n`;
 
-      let analysisText = "";
-      if (res.lastClickAttemptTime) {
-        if (res.lastSkipSuccessTime) {
-          const clickTime = new Date(res.lastClickAttemptTime).getTime();
-          const successTime = new Date(res.lastSkipSuccessTime).getTime();
-          if (clickTime > successTime && (Date.now() - clickTime > 3500)) {
-            analysisText = "⚠️ 클릭 전송 후 3.5초가 경과했으나 광고가 해제되지 않고 유지됨 (유튜브 스크립트가 클릭을 무시했을 가능성 높음)";
-          } else {
-            analysisText = "🟢 정상 (클릭 전송 후 정상적으로 광고가 스킵되었거나 진행 대기 중인 상태)";
-          }
+        // 2. 대시보드 및 컨트롤러 설정
+        reportText += `[대시보드 제어 옵션]\n`;
+        reportText += `  - 마스터 스위치 (enabled): ${res.enabled !== false ? "ON" : "OFF"}\n`;
+        reportText += `  - 지연 클릭 (delayClick): ${res.delayClick !== false ? "ON (1.0~2.5초 지연)" : "OFF (0초 즉시)"}\n`;
+        reportText += `  - 랜덤 위치 클릭 (randomClick): ${res.randomClick !== false ? "ON (분산 클릭)" : "OFF (버튼 중앙 클릭)"}\n`;
+        reportText += `  - 가상 클릭 (virtualClick): ${res.virtualClick === true ? "ON (디버거 경유)" : "OFF (이벤트 합성)"}\n\n`;
+
+        // 3. 누적 및 세션 시청 통계
+        reportText += `[시청 누적/세션 통계]\n`;
+        reportText += `  - 총 영상시청시간: ${formatTime(res.videoTimeWatched || 0)}\n`;
+        reportText += `  - 현재 영상시청시간: ${formatTime(res.currentVideoTime || 0)}\n`;
+        reportText += `  - 총 광고시청시간: ${formatTime(res.adTimeWasted || 0)}\n`;
+        reportText += `  - 현재영상 광고시청시간: ${formatTime(res.currentAdTime || 0)}\n\n`;
+
+        // 4. 실시간 감지 상태
+        const status = res.currentAdStatus || {};
+        reportText += `[실시간 돔 필터 감지 상태]\n`;
+        reportText += `  - 버튼 감지 (tagDetected): ${status.tagDetected ? "🟢 YES" : "🔴 NO"}\n`;
+        reportText += `  - 버튼 위치/크기 (rectFound): ${status.rectFound ? "🟢 YES" : "🔴 NO"}\n`;
+        reportText += `  - 버튼 보임 (visible): ${status.visible ? "🟢 YES" : "🔴 NO"}\n`;
+        reportText += `  - 광고 재생 중 (videoPlaying): ${status.videoPlaying ? "🟢 YES" : "🔴 NO"}\n`;
+        reportText += `  - 필수 시청 완료 (timerCompleted): ${status.timerCompleted ? "🟢 YES" : "🔴 NO"}${status.remainingTime !== null && !status.timerCompleted ? ` (대기: ${status.remainingTime}초)` : ""}\n`;
+        reportText += `  - 버튼 불투명 (opacityNormal): ${status.opacityNormal ? "🟢 YES" : "🔴 NO"}\n\n`;
+
+        // 5. 최근 스킵 및 차단 로그
+        reportText += `[스킵 동작 로그]\n`;
+        reportText += `  - 최근 스킵 타임라인: [${res.skipLogs && res.skipLogs.length > 0 ? res.skipLogs.join(', ') : '기록 없음'}]\n\n`;
+
+        // 6. 차단 방지 가드 에러
+        reportText += `[차단 가드 오류 진단]\n`;
+        if (res.enforcementError) {
+          reportText += `  - 감지 시각: ${res.enforcementError.time}\n`;
+          reportText += `  - 감지 요인: ${res.enforcementError.selector}\n`;
+          reportText += `  - 가드 데이터 스니펫: ${res.enforcementError.html}\n\n`;
         } else {
-          analysisText = "⚠️ 클릭 전송을 하였으나 아직까지 광고 스킵 성공 기록이 한 번도 없음 (이벤트 수신 불통 상태)";
+          reportText += `  - 감지된 차단 가드 없음 (정상 상태)\n\n`;
         }
-      } else {
-        analysisText = "⚪ 클릭 대기 상태 (아직 모든 스킵 만족 조건이 충족되지 않음)";
-      }
 
-      const timelineText = `
-[광고 제어 타임라인 분석]
-  - 마지막 조건 통과 시각: ${lastPass}
-  - 마지막 클릭 시도 시각: ${lastClick}
-  - 마지막 건너뛰기 성공 시각: ${lastSuccess}
-  - 클릭 결과 정밀 진단: ${analysisText}`;
-
-      const logs = res.skipLogs && res.skipLogs.length > 0 ? res.skipLogs.join(', ') : '기록 없음';
-      const adHtmlText = res.lastAdHtml ? res.lastAdHtml : '스킵 단추 HTML을 찾지 못함';
-      const timeHtmlText = res.lastAdTimeHtml ? res.lastAdTimeHtml : '재생 시간 HTML을 찾지 못함';
-
-      const reportText = `=== YT ad watch & click 현재상태 복사 ===
-제보 시간: ${timeStr}
-누적 클릭 수: ${res.skippedCount || 0}회
-영상시청시간: ${formatTime(res.videoTimeWatched || 0)}
-광고시청시간: ${formatTime(res.adTimeWasted || 0)}
-최근 스킵 로그: [${logs}]
-
-[실시간 돔 감지 상태]${statusText}
-${timelineText}
-
-[스킵 버튼 부근 HTML 구조]
-${adHtmlText}
-
-[동영상 재생 시간 정보 HTML 구조]
-${timeHtmlText}
-=============================================`;
-
-      copyToClipboard(reportText, reportSkipFailedBtn, "제보 로그 복사 완료!");
-    });
-  });
-
-  // 5. 차단 가드 제보 버튼 클립보드 복사 이벤트
-  reportEnforcementBtn.addEventListener('click', () => {
-    chrome.storage.local.get(['enforcementError'], (res) => {
-      if (!res.enforcementError) {
-        alert('기록된 차단 가드(경고 배너) 데이터가 없습니다. 차단 가드가 발견된 상황에서만 제보할 수 있습니다.');
-        return;
-      }
-      const errorInfo = res.enforcementError;
-      const reportText = `=== YT ad watch & click 차단 가드 정보 ===
-발생 시간: ${errorInfo.time}
-감지 셀렉터: ${errorInfo.selector}
-HTML 데이터 스니펫:
-${errorInfo.html}
-=============================================`;
-
-      copyToClipboard(reportText, reportEnforcementBtn, "차단 로그 복사 완료!");
-    });
-  });
-
-  // 5.5. 시청 역사 기록 클립보드 복사 이벤트
-  if (btnCopyHistory) {
-    btnCopyHistory.addEventListener('click', () => {
-      chrome.storage.local.get(['watchHistory', 'skippedCount'], (res) => {
+        // 7. 최근 시청 역사 기록
+        reportText += `[시청 역사 기록 (최근 5건)]\n`;
         const history = res.watchHistory || [];
-        const skipCount = res.skippedCount || 0;
-        
-        let report = `=== YT ad watch & click 시청 기록 ===\n`;
-        report += `복사 시간: ${new Date().toLocaleString()}\n`;
-        report += `총 누적 스킵 횟수: ${skipCount}회\n\n`;
-        report += `[최근 시청 영상 역사]\n`;
-        
         if (history.length === 0) {
-          report += `(기록된 시청 역사가 없습니다. 영상을 시청한 뒤 다른 영상으로 이동하면 기록이 생성됩니다.)\n`;
+          reportText += `  - 기록된 시청 역사가 없음\n\n`;
         } else {
           history.forEach((item, index) => {
-            report += `${index + 1}. ${item.timestamp} | 시청: ${formatTimeSimple(item.watchTime)} | 광고: ${formatTimeSimple(item.adTime)}\n`;
-            report += `   - 제목: ${item.title}\n`;
-            report += `   - 링크: ${item.url}\n\n`;
+            reportText += `  ${index + 1}. ${item.timestamp} | 시청: ${formatTimeSimple(item.watchTime)} | 광고: ${formatTimeSimple(item.adTime)}\n`;
+            reportText += `     - 제목: ${item.title}\n`;
+            reportText += `     - 링크: ${item.url}\n`;
           });
+          reportText += `\n`;
         }
-        report += `===================================`;
-        
-        navigator.clipboard.writeText(report).then(() => {
-          const originalText = labelCopyHistory.textContent;
-          labelCopyHistory.textContent = '복사 완료!';
-          btnCopyHistory.style.borderColor = 'var(--success-color)';
-          setTimeout(() => {
-            labelCopyHistory.textContent = originalText;
-            btnCopyHistory.style.borderColor = '';
-          }, 1200);
-        });
-      });
-    });
-  }
 
-  // 5.8. 그룹 5: 시나리오 테스트 버튼 이벤트 바인딩
-  const btnTestS1 = document.getElementById('btn-test-s1');
-  if (btnTestS1) {
-    btnTestS1.addEventListener('click', () => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (!tabs || !tabs[0] || !tabs[0].id) return;
-        const tabId = tabs[0].id;
-        
-        chrome.tabs.sendMessage(tabId, { action: "get_button_coordinates" }, (response) => {
-          if (!response || !response.success || response.x === undefined) {
-            alert("스킵 버튼의 좌표를 찾지 못했거나 버튼이 활성화되어 있지 않습니다.");
-            return;
-          }
-          
-          const x = Math.round(response.x);
-          const y = Math.round(response.y);
-          
-          chrome.runtime.sendMessage({
-            action: "trigger_s1_debugger",
-            tabId: tabId,
-            x: x,
-            y: y
-          }, (res) => {
-            if (res && res.success) {
-              btnTestS1.style.borderColor = 'var(--success-color)';
-              setTimeout(() => { btnTestS1.style.borderColor = ''; }, 1000);
-            } else {
-              alert("백그라운드 디버거 실행 실패: " + (res ? res.error : "알 수 없는 에러"));
-            }
-          });
-        });
-      });
-    });
-  }
-
-  const btnTestS2 = document.getElementById('btn-test-s2');
-  if (btnTestS2) {
-    btnTestS2.addEventListener('click', () => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs[0] && tabs[0].id) {
-          chrome.tabs.sendMessage(tabs[0].id, { action: "test_s2" }, () => {
-            btnTestS2.style.borderColor = 'var(--success-color)';
-            setTimeout(() => { btnTestS2.style.borderColor = ''; }, 1000);
-          });
-        }
-      });
-    });
-  }
-
-  const btnTestS3 = document.getElementById('btn-test-s3');
-  if (btnTestS3) {
-    btnTestS3.addEventListener('click', () => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs[0] && tabs[0].id) {
-          chrome.tabs.sendMessage(tabs[0].id, { action: "test_s3" }, () => {
-            btnTestS3.style.borderColor = 'var(--success-color)';
-            setTimeout(() => { btnTestS3.style.borderColor = ''; }, 1000);
-          });
-        }
-      });
-    });
-  }
-
-  const btnTestS4 = document.getElementById('btn-test-s4');
-  if (btnTestS4) {
-    btnTestS4.addEventListener('click', () => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs[0] && tabs[0].id) {
-          chrome.tabs.sendMessage(tabs[0].id, { action: "test_s4" }, () => {
-            btnTestS4.style.borderColor = 'var(--success-color)';
-            setTimeout(() => { btnTestS4.style.borderColor = ''; }, 1000);
-          });
-        }
-      });
-    });
-  }
-
-
-
-  const btnTestS6 = document.getElementById('btn-test-s6');
-  if (btnTestS6) {
-    btnTestS6.addEventListener('click', () => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs && tabs[0] && tabs[0].id) {
-          chrome.tabs.sendMessage(tabs[0].id, { action: "test_s6" }, () => {
-            btnTestS6.style.borderColor = 'var(--success-color)';
-            setTimeout(() => { btnTestS6.style.borderColor = ''; }, 1000);
-          });
-        }
-      });
-    });
-  }
-
-  if (btnCopyErrors) {
-    btnCopyErrors.addEventListener('click', () => {
-      chrome.storage.local.get(['runtimeErrors'], (res) => {
+        // 8. 내부 런타임 오류 로그
+        reportText += `[최근 내부 시스템 런타임 오류]\n`;
         const errs = res.runtimeErrors || [];
-        const manifest = chrome.runtime.getManifest();
-        
-        let report = `=== YT ad watch & click 내부 오류 로그 ===\n`;
-        report += `복사 시간: ${new Date().toLocaleString()}\n`;
-        report += `[시스템 진단 팩트]\n`;
-        report += ` - chrome.debugger API 활성 상태: ${typeof chrome.debugger !== 'undefined'}\n`;
-        report += ` - manifest.json 선언 권한 목록: ${JSON.stringify(manifest.permissions || [])}\n`;
-        report += ` - manifest.json 버전: ${manifest.version} (${manifest.version_name || 'N/A'})\n\n`;
-        
-        report += `[상세 오류 로그 목록]\n`;
         if (errs.length === 0) {
-          report += `(기록된 내부 오류 로그가 존재하지 않습니다. 확장 프로그램이 정상 상태입니다.)`;
+          reportText += `  - 기록된 런타임 에러 없음\n`;
         } else {
-          report += errs.join('\n\n');
+          reportText += errs.slice(0, 10).join('\n\n') + '\n';
         }
-        
-        navigator.clipboard.writeText(report).then(() => {
-          const originalText = btnCopyErrors.innerHTML;
-          btnCopyErrors.innerHTML = `<span>복사 완료!</span>`;
-          btnCopyErrors.style.borderColor = 'var(--success-color)';
-          setTimeout(() => {
-            btnCopyErrors.innerHTML = originalText;
-            btnCopyErrors.style.borderColor = '';
-          }, 1200);
-        });
+        reportText += `================================================`;
+
+        copyToClipboard(reportText, btnCopyAll, "통합 로그 복사 완료!");
       });
+    });
+  }
+
+  // 4. 로그 초기화 (시청 기록 및 오류 로그 등 데이터 초기화)
+  if (btnResetLogs) {
+    btnResetLogs.addEventListener('click', () => {
+      if (confirm('시청 기록, 스킵 로그 및 내부 오류 로그 내역을 모두 초기화하시겠습니까? (누적 시청시간 통계는 유지됩니다)')) {
+        chrome.storage.local.set({
+          watchHistory: [],
+          skipLogs: [],
+          runtimeErrors: [],
+          enforcementError: null,
+          lastConditionPassTime: null,
+          lastClickAttemptTime: null,
+          lastSkipSuccessTime: null
+        }, () => {
+          btnResetLogs.style.borderColor = 'var(--success-color)';
+          setTimeout(() => {
+            btnResetLogs.style.borderColor = '';
+          }, 1000);
+        });
+      }
+    });
+  }
+
+  // 5. 시청시간 초기화 (누적 시청 및 대기 시간 통계 초기화)
+  if (btnResetWatchTime) {
+    btnResetWatchTime.addEventListener('click', () => {
+      if (confirm('누적 영상시청시간과 누적 광고시청시간 통계를 모두 0초로 초기화하시겠습니까?')) {
+        chrome.storage.local.set({
+          videoTimeWatched: 0,
+          adTimeWasted: 0,
+          currentVideoTime: 0,
+          currentAdTime: 0
+        }, () => {
+          totalWatchTime.textContent = '0 00:00:00';
+          currentWatchTime.textContent = '0 00:00:00';
+          totalAdTime.textContent = '0 00:00:00';
+          currentAdTime.textContent = '0 00:00:00';
+          btnResetWatchTime.style.borderColor = 'var(--success-color)';
+          setTimeout(() => {
+            btnResetWatchTime.style.borderColor = '';
+          }, 1000);
+        });
+      }
+    });
+  }
+
+  // 6. 대시보드 설정 초기화 (지연 ON, 랜덤 ON, 가상 ON)
+  if (btnResetDashboard) {
+    btnResetDashboard.addEventListener('click', () => {
+      if (confirm('대시보드 상세 스킵 제어 설정을 공장 초기값(지연 ON, 랜덤 ON, 가상 ON)으로 되돌리시겠습니까?')) {
+        chrome.storage.local.set({
+          delayClick: true,
+          randomClick: true,
+          virtualClick: true
+        }, () => {
+          updateToggleButtonState(btnDelayClick, true);
+          updateToggleButtonState(btnRandomClick, true);
+          updateToggleButtonState(btnVirtualClick, true);
+          btnResetDashboard.style.borderColor = 'var(--success-color)';
+          setTimeout(() => {
+            btnResetDashboard.style.borderColor = '';
+          }, 1000);
+        });
+      }
     });
   }
 
@@ -429,40 +337,9 @@ ${errorInfo.html}
     }
     if (changes.currentAdStatus) {
       updateLightsUI(changes.currentAdStatus.newValue || {});
-      updateClickSectionUI(changes.currentAdStatus.newValue || {});
       updateAdHighlight(changes.currentAdStatus.newValue || {});
     }
-    if (changes.enforcementError) {
-      if (changes.enforcementError.newValue) {
-        reportEnforcementBtn.classList.add('guard-warning');
-      } else {
-        reportEnforcementBtn.classList.remove('guard-warning');
-      }
-    }
   });
-
-  // 그룹 3: 실행 및 클릭 분석 UI 업데이트 함수
-  function updateClickSectionUI(status) {
-    if (!status) return;
-
-    if (valClicked) {
-      valClicked.textContent = status.clicked ? "실행 완료" : "대기 중";
-    }
-    if (valWarning) {
-      valWarning.textContent = status.clickFailed ? "실패 경고" : "정상";
-      if (status.clickFailed) {
-        valWarning.style.color = 'var(--danger-color)';
-      } else {
-        valWarning.style.color = '';
-      }
-    }
-    if (valDelay) {
-      valDelay.textContent = status.clickDelay || "대기 중";
-    }
-    if (valCoordinates) {
-      valCoordinates.textContent = status.clickCoordinates || "대기 중";
-    }
-  }
 
   // 신호등 UI 동적 제어 함수
   function updateLightsUI(status) {
@@ -471,16 +348,7 @@ ${errorInfo.html}
       const el = lights[key];
       if (!el) return;
 
-      if (key === 'clickFailed') {
-        // 실패 감지 신호등만 예외적으로 참일 때 붉은색(error) 경고등으로 작동
-        if (status[key]) {
-          el.classList.add('error');
-          reportSkipFailedBtn.classList.add('failed-warning');
-        } else {
-          el.classList.remove('error');
-          reportSkipFailedBtn.classList.remove('failed-warning');
-        }
-      } else if (key === 'timerCompleted') {
+      if (key === 'timerCompleted') {
         const pct = status.progressPercent !== undefined ? status.progressPercent : 0;
         const progressRing = el.querySelector('.progress-ring');
         const progressBar = el.querySelector('#timer-progress-bar');

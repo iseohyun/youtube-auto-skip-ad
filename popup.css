@@ -292,6 +292,44 @@ input:checked + .slider:before {
   border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
+.light-grid.grid-4x1 {
+  grid-template-columns: repeat(4, 1fr) !important;
+}
+
+.btn-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(139, 92, 246, 0.12);
+  border: 2px solid rgba(139, 92, 246, 0.4);
+  color: #e2e8f0;
+  cursor: pointer;
+  outline: none;
+  padding: 0;
+  transition: all 0.2s ease;
+}
+
+.btn-circle:hover {
+  background: rgba(139, 92, 246, 0.25);
+  border-color: rgba(139, 92, 246, 0.8);
+  transform: translateY(-1px);
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.3);
+}
+
+.btn-circle:active {
+  transform: translateY(0);
+}
+
+.btn-circle.state-off {
+  background: rgba(15, 23, 42, 0.4) !important;
+  border-color: #334155 !important;
+  color: #64748b !important;
+  box-shadow: none !important;
+}
+
 .light-item {
   display: flex;
   flex-direction: column;
@@ -372,6 +410,7 @@ input:checked + .slider:before {
   font-size: 0.62rem;
   font-weight: 600;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 /* 그룹 4: 진단 도구 패널 (2x2 그리드) */
