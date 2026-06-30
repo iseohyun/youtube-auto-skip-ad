@@ -317,12 +317,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 6. 실시간 수치 갱신 리스너
   chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (changes.skippedCount) {
-      const count = changes.skippedCount.newValue || 0;
-      if (labelCopyHistory) {
-        labelCopyHistory.textContent = `기록: Skip ${count}회`;
-      }
-    }
     if (changes.videoTimeWatched) {
       totalWatchTime.textContent = formatTime(changes.videoTimeWatched.newValue || 0);
     }
